@@ -1,0 +1,34 @@
+varnishtest "Plain L4 check detects refused connections"
+#REGTEST_TYPE=bug
+feature ignore_unknown_macro
+
+# Reserve a random local port, then release its listener so the health check
+# receives a TCP RST instead of relying on a well-known closed port.
+server closed_port {} -start
+server closed_port -break
+
+syslog S1 -level notice {
+    recv
+    expect ~ "[^:\\[ ]\\[${h1_pid}\\]: Health check for server be1/srv1 failed.+reason: Layer4 connection problem.+info: \"ECONNREFUSED returned by OS.*\".+check duration: [[:digit:]]+ms.+status: 0/1 DOWN."
+} -start
+
+haproxy h1 -conf {
+    global
+    .if feature(THREAD)
+        thread-groups 1
+    .endif
+
+    defaults
+        mode tcp
+        timeout client "${HAPROXY_TEST_TIMEOUT-5s}"
+        timeout server "${HAPROXY_TEST_TIMEOUT-5s}"
+        timeout connect "${HAPROXY_TEST_TIMEOUT-5s}"
+        option log-health-checks
+        default-server inter 200ms downinter 100ms rise 1 fall 1
+
+    backend be1
+        log ${S1_addr}:${S1_port} daemon
+        server srv1 ${closed_port_addr}:${closed_port_port} check
+} -start
+
+syslog S1 -wait

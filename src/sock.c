@@ -965,6 +965,9 @@ int sock_conn_check(struct connection *conn)
 {
 	struct sockaddr_storage *addr;
 	int fd = conn->handle.fd;
+	int skerr;
+	socklen_t lskerr;
+	unsigned int err_hup;
 
 	if (conn->flags & CO_FL_ERROR)
 		return 0;
@@ -979,6 +982,12 @@ int sock_conn_check(struct connection *conn)
 
 	if (!fd_send_ready(fd) && !(fdtab[fd].state & (FD_POLL_ERR|FD_POLL_HUP)))
 		return 0;
+
+	/* Keep this before possibly clearing FD_POLL_HUP below. If the poller
+	 * reported an error or hangup, a successful second connect() is not enough
+	 * to validate the connection: SO_ERROR may still hold the actual error.
+	 */
+	err_hup = fdtab[fd].state & (FD_POLL_ERR|FD_POLL_HUP);
 
 	/* Here we have 2 cases :
 	 *  - modern pollers, able to report ERR/HUP. If these ones return any
@@ -1033,6 +1042,10 @@ int sock_conn_check(struct connection *conn)
 	 *  - error
 	 *  - connecting (EALREADY, EINPROGRESS)
 	 *  - connected (EISCONN, 0)
+	 *
+	 * If the poller reported an error or hangup, a successful connect() or
+	 * EISCONN result must be confirmed with SO_ERROR before declaring the
+	 * connection established.
 	 */
 	addr = conn->dst;
 	if ((conn->flags & CO_FL_SOCKS4) && obj_type(conn->target) == OBJ_TYPE_SERVER)
@@ -1043,6 +1056,17 @@ int sock_conn_check(struct connection *conn)
 			goto wait;
 
 		if (errno && errno != EISCONN) {
+			conn_set_errno(conn, errno);
+			conn_report_term_evt(conn, tevt_loc_fd, fd_tevt_type_connect_err);
+			goto out_error;
+		}
+	}
+
+	if (err_hup) {
+		skerr = 0;
+		lskerr = sizeof(skerr);
+		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &skerr, &lskerr) == 0 && skerr) {
+			errno = skerr;
 			conn_set_errno(conn, errno);
 			conn_report_term_evt(conn, tevt_loc_fd, fd_tevt_type_connect_err);
 			goto out_error;
