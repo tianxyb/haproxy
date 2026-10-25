@@ -18640,6 +18640,24 @@ check-send-proxy
   "check-send-proxy" option needs to be used to force the use of the
   protocol. See also the "send-proxy" option for more information.
 
+check-mark <value>
+  May be used in the following contexts: tcp, http
+
+  This is used to set the Netfilter/IPFW MARK on the sockets used by outgoing
+  health checks on this server to the value passed in <value> on platforms
+  which support it. This value is an unsigned 32 bit value which can be
+  expressed both in decimal or hexadecimal format (prefixed by "0x"). It can
+  be useful to route health check packets differently from regular traffic
+  (for example through a dedicated routing table). This works on Linux
+  kernels 2.6.32 and above and requires admin privileges (the CAP_NET_ADMIN
+  capability), as well on FreeBSD and OpenBSD. The mark is only applied on
+  newly established check connections, and has no effect on connections
+  reused from the pool ("check-reuse-pool") nor on regular data connections,
+  which remain under the control of the "set-bc-mark" rule.
+
+  This keyword is not supported on platforms which do not provide any of
+  SO_MARK, SO_USER_COOKIE nor SO_RTABLE.
+
 check-alpn <protocols>
   May be used in the following contexts: tcp, http
 

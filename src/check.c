@@ -2399,6 +2399,40 @@ static int srv_parse_check_via_socks4(char **args, int *cur_arg, struct proxy *c
 	return 0;
 }
 
+/* parse the "check-mark" server keyword */
+static int srv_parse_check_mark(char **args, int *cur_arg,
+				struct proxy *px, struct server *newsrv, char **err)
+{
+	int err_code = 0;
+
+#if defined(SO_MARK) || defined(SO_USER_COOKIE) || defined(SO_RTABLE)
+	char *end;
+
+	if (!*args[*cur_arg + 1]) {
+		memprintf(err, "'%s' : missing value", args[*cur_arg]);
+		goto error;
+	}
+	newsrv->check.mark = strtoul(args[*cur_arg + 1], &end, 0);
+	if (*end != '\0') {
+		memprintf(err, "'%s' : invalid mark value '%s'", args[*cur_arg], args[*cur_arg + 1]);
+		goto error;
+	}
+	newsrv->check.mark_present = 1;
+	global.last_checks |= LSTCHK_NETADM;
+#else
+	memprintf(err, "'%s' : not supported on this platform (SO_MARK|SO_USER_COOKIE|SO_RTABLE undefined)",
+		  args[*cur_arg]);
+	goto error;
+#endif
+
+  out:
+	return err_code;
+
+  error:
+	err_code |= ERR_ALERT | ERR_FATAL;
+	goto out;
+}
+
 /* Parse the "no-check" server keyword */
 static int srv_parse_no_check(char **args, int *cur_arg, struct proxy *curpx, struct server *srv,
 			      char **errmsg)
@@ -2752,6 +2786,7 @@ static struct srv_kw_list srv_kws = { "CHK", { }, {
 	{ "agent-port",          srv_parse_agent_port,          1,  1,  1 }, /* Set the TCP port used for agent checks. */
 	{ "agent-send",          srv_parse_agent_send,          1,  1,  1 }, /* Set string to send to agent. */
 	{ "check",               srv_parse_check,               0,  1,  1 }, /* Enable health checks */
+	{ "check-mark",          srv_parse_check_mark,          1,  1,  1 }, /* Set the mark on health check connections */
 	{ "check-pool-conn-name", srv_parse_check_pool_conn_name, 1, 1, 1 }, /* */
 	{ "check-proto",         srv_parse_check_proto,         1,  1,  1 }, /* Set the mux protocol for health checks  */
 	{ "check-reuse-pool",    srv_parse_check_reuse_pool,    0,  1,  1 }, /* Allows to reuse idle connections for checks */

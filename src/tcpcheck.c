@@ -1420,6 +1420,12 @@ enum tcpcheck_eval_ret tcpcheck_eval_connect(struct check *check, struct tcpchec
 	conn->ctx = check->sc;
 	conn_set_owner(conn, check->sess, NULL);
 
+	/* mark? */
+	if (s && s->check.mark_present) {
+		conn->mark = s->check.mark;
+		conn->flags |= CO_FL_OPT_MARK;
+	}
+
 	/* no client address */
 	if (!sockaddr_alloc(&conn->dst, NULL, 0)) {
 		TRACE_ERROR("sockaddr allocation error", CHK_EV_TCPCHK_CONN|CHK_EV_TCPCHK_ERR, check);
